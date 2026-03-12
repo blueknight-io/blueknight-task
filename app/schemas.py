@@ -14,16 +14,8 @@ class Action(BaseModel):
 
 class QueryPayload(BaseModel):
     query_text: str = ""
-    industry: list[str] = Field(default_factory=list)
-    customer_type: list[str] = Field(default_factory=list)
     geography: list[str] = Field(default_factory=list)
-    exclusions: list[str] = Field(default_factory=list)
-    min_revenue: float = 0
-    max_revenue: float = 0
-    offering_weight: float = 0
-    customer_weight: float = 0
-    problem_weight: float = 0
-    use_case_weight: float = 0
+    
 
 
 class RefineRequest(BaseModel):

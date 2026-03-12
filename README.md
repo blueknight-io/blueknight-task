@@ -30,6 +30,8 @@ You must ingest this CSV into a vector database of your choice (Qdrant, Pinecone
 pgvector, etc.), embed the `long_offering` field, and make it queryable. All retrieval and
 re-ranking logic should operate on `long_offering`.
 
+
+
 ### 2. A mock retrieval function
 
 `app/retrieval.py` contains:
@@ -119,6 +121,9 @@ criterion. A candidate who always exits after one iteration has not met this req
 - Deterministic JSON contract with robust fallback if model output is malformed
 - Required fields normalized via a default payload - no field should ever be missing in the response
 - Loop termination logic must be explicit and deterministic
+
+> **Note:** The agent loop in Subtask 1 must call `POST /search/run` internally rather than re-implementing retrieval logic.
+
 
 ---
 

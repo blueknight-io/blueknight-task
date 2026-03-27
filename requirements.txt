@@ -1,11 +1,12 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
+pydantic-settings
 httpx
-
-# Candidate picks one vector option and adds it:
-# qdrant-client
-# pinecone
-# faiss-cpu
-# sqlalchemy + pgvector
-
+openai
+qdrant-client
+tenacity
+numpy
+python-dotenv
+pytest
+pytest-asyncio

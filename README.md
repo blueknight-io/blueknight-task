@@ -285,12 +285,64 @@ logs alone
 
 ## Setup
 
-1. Create a Python environment
-2. Install dependencies - your choice, document them
-3. Run the server:
+1. Create a local environment and install dependencies:
   ```bash
-   uvicorn app.main:app --reload
+  make install
   ```
+2. Copy the environment template and set your OpenAI API key:
+  ```bash
+  cp .env.example .env
+  ```
+3. Ingest the company corpus into embedded Qdrant:
+  ```bash
+  make ingest
+  ```
+4. Run the API:
+  ```bash
+  make run
+  ```
+5. Run the unit tests:
+  ```bash
+  make test
+  ```
+
+FastAPI docs are available at:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+## Usage
+
+Example search request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/search/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {
+      "query_text": "industrial software for warehouse operations in UK",
+      "geography": ["United Kingdom"],
+      "exclusions": []
+    },
+    "top_k_raw": 50,
+    "top_k_final": 10,
+    "offset": 0
+  }'
+```
+
+Example refine request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/agent/refine \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "industrial software providers for warehouse operations in UK",
+    "base_query": null,
+    "history": [],
+    "max_iterations": 3
+  }'
+```
 
 ---
 
@@ -312,3 +364,40 @@ logs alone
   - Production answer (Subtask 3)
   - What you would do with more time
 
+---
+
+## Implementation Notes
+
+### Assumptions made
+
+- The actual dataset file in this repository is `company_1000_data - Results.csv`.
+- The fields used for ingestion are `Consolidated ID`, `Company Name`, `Country`, and `Long Offering`.
+- OpenAI embeddings are used for ingestion and live query embedding.
+- Qdrant embedded mode is used for local development and take-home simplicity.
+
+### Termination condition rationale
+
+`POST /agent/refine` uses a controller-driven multishot loop. The controller, not the LLM, owns stop conditions. The system stops when:
+
+- results are strong and stable enough to stop successfully
+- no meaningful improvement is observed for the configured iteration window
+- no usable results remain after refinement attempts
+- a regression is detected and the controller reverts to the best known state
+- `max_iterations` is reached
+
+This was chosen to keep the loop deterministic, inspectable, and robust even when LLM output is unavailable or weak.
+
+### Production readiness answer
+
+If this system served 10,000 queries per day and relevance silently degraded, I would detect it by adding quality proxy metrics to the existing structured logs and watching their rolling baselines. The most useful signals here are `top_score`, `score_spread`, `geo_match_rate`, `filtered_count`, and the distribution of `drop_reasons`. None of these require human labels, but together they tell us whether the system is still finding strong matches or whether retrieval has drifted into broader, weaker candidates. I would also maintain a small set of golden queries, run them continuously in the background, and compare their top results and diagnostic metrics against a known-good baseline. That gives an early warning before users complain.
+
+My first operational change would be to alert on rolling degradation in `top_score` and `score_spread` for those golden queries and for live traffic cohorts. Those two metrics are already close to the relevance problem and are much more actionable than generic latency or error dashboards. Once the degradation is visible, I would inspect whether the issue comes from embeddings, corpus changes, retrieval recall, or reranking logic.
+
+### What I would do with more time
+
+- separate `retrieval_query_text` from the returned refined query
+- improve domain-specific query expansions for operational searches
+- make the refiner stronger at rejecting broad CRM/business software matches
+- add endpoint-level integration tests
+- add startup fail-fast checks around vector store readiness
+- keep tuning retrieval quality using the README example queries

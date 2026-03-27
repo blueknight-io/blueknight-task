@@ -20,16 +20,27 @@ class Reranker:
         scored_results: list[SearchResult] = []
         query_terms = self._tokenize(query.query_text)
         geography_terms = self._expand_geography_terms(query.geography)
+        domain_anchors = self._domain_anchors(query.query_text)
+        strong_phrases = self._strong_phrases(query.query_text)
 
         for candidate in candidates:
             geography_bonus = 1.0 if candidate.country.lower().strip() in geography_terms else 0.0
             keyword_density = self._keyword_density(query_terms, candidate.long_offering)
             name_match_bonus = self._name_match_bonus(query_terms, candidate.company_name)
+            domain_anchor_score = self._domain_anchor_score(domain_anchors, candidate.long_offering)
+            phrase_match_bonus = self._phrase_match_bonus(strong_phrases, candidate.long_offering)
+            generic_mismatch_penalty = self._generic_mismatch_penalty(
+                domain_anchors=domain_anchors,
+                offering=candidate.long_offering,
+            )
             final_score = (
                 settings.weight_vector * candidate.score
                 + settings.weight_geography * geography_bonus
                 + settings.weight_keyword_density * keyword_density
                 + settings.weight_name_match * name_match_bonus
+                + 0.12 * domain_anchor_score
+                + 0.08 * phrase_match_bonus
+                - 0.15 * generic_mismatch_penalty
             )
             scored_results.append(
                 SearchResult(
@@ -42,6 +53,9 @@ class Reranker:
                         "geography_bonus": round(geography_bonus, 6),
                         "keyword_density": round(keyword_density, 6),
                         "name_match_bonus": round(name_match_bonus, 6),
+                        "domain_anchor_score": round(domain_anchor_score, 6),
+                        "phrase_match_bonus": round(phrase_match_bonus, 6),
+                        "generic_mismatch_penalty": round(generic_mismatch_penalty, 6),
                     },
                     long_offering=candidate.long_offering,
                 )
@@ -66,6 +80,74 @@ class Reranker:
             return 0.0
         name_terms = self._tokenize(company_name)
         return 1.0 if query_terms & name_terms else 0.0
+
+    def _domain_anchors(self, query_text: str) -> set[str]:
+        tokens = self._tokenize(query_text)
+        anchor_terms = {
+            "warehouse",
+            "logistics",
+            "industrial",
+            "field",
+            "frontline",
+            "onboarding",
+            "fintech",
+            "payments",
+            "operators",
+            "delivery",
+            "deployed",
+            "inventory",
+            "fleet",
+            "route",
+            "supply",
+            "manufacturing",
+        }
+        return tokens & anchor_terms
+
+    def _strong_phrases(self, query_text: str) -> list[str]:
+        normalized = query_text.lower()
+        candidate_phrases = [
+            "warehouse operations",
+            "warehouse management",
+            "logistics operators",
+            "industrial software",
+            "field deployed",
+            "field deployment",
+            "frontline teams",
+            "onboarding inefficiency",
+            "not focused on payments",
+        ]
+        return [phrase for phrase in candidate_phrases if phrase in normalized]
+
+    def _domain_anchor_score(self, domain_anchors: set[str], offering: str) -> float:
+        if not domain_anchors:
+            return 0.0
+        offering_terms = self._tokenize(offering)
+        if not offering_terms:
+            return 0.0
+        return len(domain_anchors & offering_terms) / len(domain_anchors)
+
+    def _phrase_match_bonus(self, phrases: list[str], offering: str) -> float:
+        if not phrases:
+            return 0.0
+        lower_offering = offering.lower()
+        matched = sum(1 for phrase in phrases if phrase in lower_offering)
+        return matched / len(phrases)
+
+    def _generic_mismatch_penalty(self, *, domain_anchors: set[str], offering: str) -> float:
+        if not domain_anchors:
+            return 0.0
+        lower_offering = offering.lower()
+        generic_business_terms = {
+            "crm",
+            "customer relationship management",
+            "sales",
+            "marketing",
+            "customer engagement",
+            "project management",
+        }
+        has_generic_signal = any(term in lower_offering for term in generic_business_terms)
+        has_domain_signal = any(anchor in lower_offering for anchor in domain_anchors)
+        return 1.0 if has_generic_signal and not has_domain_signal else 0.0
 
     def _expand_geography_terms(self, values: list[str]) -> set[str]:
         aliases = {

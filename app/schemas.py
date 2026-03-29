@@ -15,7 +15,10 @@ class Action(BaseModel):
 class QueryPayload(BaseModel):
     query_text: str = ""
     geography: list[str] = Field(default_factory=list)
-    
+    domain: str = ""
+    include_keywords: list[str] = Field(default_factory=list)
+    exclude_terms: list[str] = Field(default_factory=list)
+
 
 
 class RefineRequest(BaseModel):
